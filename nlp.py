@@ -16,6 +16,17 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from scipy.stats import loguniform, randint
 
+from scipy.stats import chi2_contingency
+
+def makeChiSquaredByTopic():
+    df = pd.read_csv('trimmedDataForClassification.csv')
+
+    contingency_table = pd.crosstab(df['is_fake_news'], df['dominant_topic'])
+    chi2, p, dof, expected = chi2_contingency(contingency_table)
+
+print(f"\nChi2 Statistic: {chi2:.2f}")
+print(f"P-value: {p}")
+
 nlp_llm = pipeline("sentiment-analysis", model="distilbert/distilbert-base-uncased-finetuned-sst-2-english")
 
 def get_vader_sentiment(text, scoreType):
