@@ -8,10 +8,13 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from scipy.stats import loguniform, randint
 
 nlp_llm = pipeline("sentiment-analysis", model="distilbert/distilbert-base-uncased-finetuned-sst-2-english")
 
@@ -150,11 +153,6 @@ def logisticRegression(df, llm = True):
         X['dominant_topic'] = X['dominant_topic'].astype(str)
         X = pd.get_dummies(X, columns=['dominant_topic'], drop_first=True)
 
-
-
-
-
-
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     scaler = StandardScaler()
@@ -166,3 +164,158 @@ def logisticRegression(df, llm = True):
 
     print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}\n")
     print("Classification Report:\n", classification_report(y_test, y_pred))
+
+def rf(df, llm = True):
+    if llm:
+        features_to_use = ['llm_sentiment_score', 'dominant_topic', 'llm_sentiment']
+        X = df[features_to_use].copy()
+        y = df['is_fake_news'].astype(int)
+        X['dominant_topic'] = X['dominant_topic'].astype(str)
+        X = pd.get_dummies(X, columns=['dominant_topic', 'llm_sentiment'], drop_first=True)
+
+    else:
+        features_to_use = [
+        'vader_positive', 'vader_negative', 'vader_neutral', 'dominant_topic']
+        X = df[features_to_use].copy()
+        y = df['is_fake_news'].astype(int)
+        X['dominant_topic'] = X['dominant_topic'].astype(str)
+        X = pd.get_dummies(X, columns=['dominant_topic'], drop_first=True)
+    model = RandomForestClassifier(random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}\n")
+    print("Classification Report:\n", classification_report(y_test, y_pred))
+
+def gnb(df, llm = True):
+    if llm:
+        features_to_use = ['llm_sentiment_score', 'dominant_topic', 'llm_sentiment']
+        X = df[features_to_use].copy()
+        y = df['is_fake_news'].astype(int)
+        X['dominant_topic'] = X['dominant_topic'].astype(str)
+        X = pd.get_dummies(X, columns=['dominant_topic', 'llm_sentiment'], drop_first=True)
+
+    else:
+        features_to_use = [
+        'vader_positive', 'vader_negative', 'vader_neutral', 'dominant_topic']
+        X = df[features_to_use].copy()
+        y = df['is_fake_news'].astype(int)
+        X['dominant_topic'] = X['dominant_topic'].astype(str)
+        X = pd.get_dummies(X, columns=['dominant_topic'], drop_first=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    model = GaussianNB(var_smoothing=1e-9)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}\n")
+    print("Classification Report:\n", classification_report(y_test, y_pred))
+
+def trainEnsemble(df, llm = True, var_smoothing = 2.348881295853314e-06, C = 14.528246637516036, max_iter = 1000, solver='liblinear', max_depth=10, min_samples_leaf=3, min_samples_split=4, n_estimators=255):
+    if llm:
+        features_to_use = ['llm_sentiment_score', 'dominant_topic', 'llm_sentiment']
+        X = df[features_to_use].copy()
+        y = df['is_fake_news'].astype(int)
+        X['dominant_topic'] = X['dominant_topic'].astype(str)
+        X = pd.get_dummies(X, columns=['dominant_topic', 'llm_sentiment'], drop_first=True)
+
+    else:
+        features_to_use = [
+        'vader_positive', 'vader_negative', 'vader_neutral', 'dominant_topic']
+        X = df[features_to_use].copy()
+        y = df['is_fake_news'].astype(int)
+        X['dominant_topic'] = X['dominant_topic'].astype(str)
+        X = pd.get_dummies(X, columns=['dominant_topic'], drop_first=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    gnb = GaussianNB(var_smoothing = var_smoothing)
+    gnb.fit(X_train, y_train)
+    lr = LogisticRegression(C = C, max_iter = 1000, solver = solver)
+    lr.fit(X_train, y_train)
+    rf = RandomForestClassifier(max_depth = max_depth, min_samples_leaf = min_samples_leaf, min_samples_split = min_samples_split, n_estimators = n_estimators)
+    rf.fit(X_train, y_train)
+
+    voting_ensemble = VotingClassifier(
+    estimators=[
+        ('GNB', gnb),
+        ('Logistic', lr),
+        ('Random Forest', rf)
+    ],
+    voting='hard' )
+    voting_ensemble.fit(X_train, y_train)
+    y_pred_voting = voting_ensemble.predict(X_test)
+
+    print(f"Voting Ensemble Accuracy: {accuracy_score(y_test, y_pred_voting):.4f}")
+    print("Classification Report:\n", classification_report(y_test, y_pred_voting))
+    return voting_ensemble
+
+def hyperparameterTuneAllThreeModels(df, llm = True):
+    if llm:
+        features_to_use = ['llm_sentiment_score', 'dominant_topic', 'llm_sentiment']
+        X = df[features_to_use].copy()
+        y = df['is_fake_news'].astype(int)
+        X['dominant_topic'] = X['dominant_topic'].astype(str)
+        X = pd.get_dummies(X, columns=['dominant_topic', 'llm_sentiment'], drop_first=True)
+
+    else:
+        features_to_use = [
+        'vader_positive', 'vader_negative', 'vader_neutral', 'dominant_topic']
+        X = df[features_to_use].copy()
+        y = df['is_fake_news'].astype(int)
+        X['dominant_topic'] = X['dominant_topic'].astype(str)
+        X = pd.get_dummies(X, columns=['dominant_topic'], drop_first=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    gnb = GaussianNB()
+    lr = LogisticRegression(max_iter=1000)
+    rf = RandomForestClassifier()
+
+    param_dist_gnb = {
+    'var_smoothing': loguniform(1e-9, 1e0)
+    }
+
+    param_dist_lr = {
+    'solver': ['liblinear'],
+    'penalty': ['l1', 'l2'],
+    'C': loguniform(1e-3, 1e2)
+    }
+
+    param_dist_rf = {
+    'n_estimators': randint(50, 300),
+    'max_depth': randint(3, 20),
+    'min_samples_split': randint(2, 11),
+    'min_samples_leaf': randint(1, 5)
+    }
+    models_and_params = {
+    'Gaussian Naive Bayes': (gnb, param_dist_gnb, 20), # (model, parameters, n_iter)
+    'Logistic Regression': (lr, param_dist_lr, 20),
+    'Random Forest': (rf, param_dist_rf, 30) # Giving RF a few more iterations since it's more complex
+    }
+    best_estimators = {}
+    print("--- Starting Randomized Search ---")
+    for name, (model, params, n_iters) in models_and_params.items():
+        print(f"Tuning {name}...")
+
+        random_search = RandomizedSearchCV(
+            estimator=model,
+            param_distributions=params,
+            n_iter=n_iters,   # How many random combinations to test
+            cv=5,             # 5-fold cross-validation
+            scoring='accuracy',
+            n_jobs=-1,        # Use all CPU cores
+            random_state=42   # For reproducibility
+            )
+
+        random_search.fit(X_train, y_train)
+
+            # Save the best trained model
+        best_estimators[name] = random_search.best_estimator_
+
+        print(f"  Best Accuracy: {random_search.best_score_:.4f}")
+        print(f"  Best Params: {random_search.best_params_}\n")
+
+            # 5. Evaluate the tuned models on the test set
+        print("--- Final Test Set Performance ---")
+        for name, best_model in best_estimators.items():
+            y_pred = best_model.predict(X_test)
+            test_acc = accuracy_score(y_test, y_pred)
+
+            print(f"{name}: {test_acc:.4f}")
+            print("Classification Report:\n", classification_report(y_test, y_pred))
+    return best_estimators
